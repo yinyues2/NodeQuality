@@ -1,4 +1,9 @@
 # NodeQuality
+
+> **本仓库是 `hermes-fixed` 分支：修补了 IP 质量段的三处误判（AmazonPV/Reddit 假屏蔽、Netflix 假 DNS），其余与上游一致。**
+> 用法与修补说明见 [HERMES-PATCH.md](HERMES-PATCH.md)；一键跑完整深度模式：
+> `curl -fsSL https://raw.githubusercontent.com/yinyues2/NodeQuality/hermes-fixed/extras/run_nq_full.sh | bash`
+
 在沙箱环境中运行vps测试脚本，并排版测试结果
 
 本项目本质上是测试工具集合的**前置加载器和结果后处理**项目。把服务器测试工作的流程给规范化自动化了。

@@ -414,7 +414,15 @@ function run_HardwareQuality(){
 
 
 function run_ip_quality(){
-    chroot_run bash <(curl -Ls https://IP.Check.Place) $opt_ipv $opt_lang -y -o /result/$ip_quality_json_filename
+    # [HERMES-PATCH] 用修补版 IPQuality 替换上游 https://IP.Check.Place（两者原本字节一致：
+    # sha256 b30df5a3… 108,641B, v2026-09-16）。修补内容：AmazonPV 加浏览器头+重试、
+    # Reddit 先测首页、Netflix 剔除 ANSWER<=2 的 DNS 假阳启发式。
+    if [[ -f "${HERMES_IPQ:-/root/ipq-hermes.sh}" ]]; then
+        cp "${HERMES_IPQ:-/root/ipq-hermes.sh}" "$work_dir/BenchOs/result/ipq-hermes.sh"
+        chroot_run bash /result/ipq-hermes.sh $opt_ipv $opt_lang -y -o /result/$ip_quality_json_filename
+    else
+        chroot_run bash <(curl -Ls https://IP.Check.Place) $opt_ipv $opt_lang -y -o /result/$ip_quality_json_filename
+    fi
 }
 
 function run_net_quality(){
