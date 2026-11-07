@@ -40,6 +40,21 @@ printf 'v\ny\ny\ny\n' | env TERM=xterm HERMES_IPQ=/root/ipq-hermes.sh bash NodeQ
 
 `HERMES_IPQ` 指向修补版路径；不设置就退回上游行为。`-D` 指定工作目录。
 
+## v2 修订（2026-11-08）：IPQS 分值落盘、IPv4 分支隔离、运行器加固
+
+| 问题 | 现象 | 修补 |
+|---|---|---|
+| IPQS 分值写错变量 | `save_json` 用 `${ipapi[ipqs]:-null}`，该变量从未赋值，报告里 IPQS 恒为字符串 `"null"`；文本段落用的是 `${ipqs[score]}`，因此出现「文本有分、JSON 无分」 | 改为 `${ipqs[score]}`；`fraud_score` 严格校验为 0–100 的整数，否则记 `null`（缺失不等于低风险） |
+| 响应解析过宽 | 非 JSON、空响应、JSON 流都会被 `jq -r '.fraud_score'` 静默吃成空值 | 先 `curl -f`，再 `jq -e -s 'length == 1 and (.[0]|type=="object")'` 只接受单个对象；`jq` 缺失直接报错退出，不再静默出空报告 |
+| `-4` 仍在跑 IPv6 | `get_ipv4`/`get_ipv6` 在选项解析之前无条件调用，`-4` 只影响后续模块 | 新增 `preparse_ip_family()`，`-4`/`-6` 设置 `skip_ipv4_probe`/`skip_ipv6_probe`，两个探测函数入口即返回 |
+| 错误码被覆盖 | 同时给冲突参数与 `-i/-x` 时，`ERRORcode` 被 40/60 覆盖掉 4/6 | 仅在 `ERRORcode` 不是 4/6 时才写 40/60 |
+| 报告生成失败仍返回 0 | `save_json` 失败被忽略 | 显式 `return 1`，主流程打印失败并返回非 0 |
+| 运行器不 fail-closed | `run_nq_full.sh` 校验失败仅警告后继续；收尾按 `bench\|BenchOs` 关键词全局卸载挂载 | 校验失败直接退出；只 `findmnt` 精确匹配 `$WORK/BenchOs/{proc,sys,dev}` 再 `umount -R`；新增 `NQ_OPTS` 透传（如 `NQ_OPTS=-4`） |
+
+**已知边界**：IPQS 数据仍经 `ipinfo.check.place/...?db=ipqualityscore` 代理获取，不是 IPQualityScore 官方 API；没有官方 key 时该分值只能当参考，不能当权威判定。本分支不绕过任何站点的反爬或风控。
+
+---
+
 ## 注意
 
 - 上游脚本自身在收尾「安装后清理」阶段会返回 `exit=1`，报告仍完整上传，属上游既有行为。

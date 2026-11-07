@@ -15,19 +15,24 @@ curl -fsSL --retry 3 "$REPO_RAW/NodeQuality.sh"       -o /root/NodeQuality.sh   
 curl -fsSL --retry 3 "$REPO_RAW/extras/ipq-hermes.sh" -o /root/ipq-hermes.sh   || { echo "ipq-hermes.sh 下载失败" >> status.log; exit 1; }
 chmod +x /root/NodeQuality.sh /root/ipq-hermes.sh
 
-# 可选完整性校验（仓库内 SHA256SUMS，取不到就跳过）
-if curl -fsSL --max-time 10 "$REPO_RAW/SHA256SUMS" -o /tmp/nq-SHA256SUMS 2>/dev/null; then
-  (cd /root && grep -E "NodeQuality\.sh|ipq-hermes\.sh" /tmp/nq-SHA256SUMS | sha256sum -c --status) \
-    && echo "sha256 校验通过" >> status.log || echo "警告：sha256 校验未通过（继续执行）" >> status.log
+# 完整性校验：必须通过，否则不执行（fail-closed）
+if ! curl -fsSL --max-time 10 "$REPO_RAW/SHA256SUMS" -o /tmp/nq-SHA256SUMS; then
+  echo "SHA256SUMS 下载失败，拒绝执行" >> status.log; exit 1
+fi
+if ! ( cd /root && grep -E "NodeQuality\.sh|ipq-hermes\.sh" /tmp/nq-SHA256SUMS \
+         | sed 's|  extras/|  |' | sha256sum -c - ) >> status.log 2>&1; then
+  echo "sha256 校验未通过，拒绝执行" >> status.log; exit 1
 fi
 
 echo "=== [$(date -Is)] NQ 开始（深度全量 v/y/y/y）" >> status.log
 printf 'v\ny\ny\ny\n' | env TERM=xterm LANG=C.UTF-8 HERMES_IPQ=/root/ipq-hermes.sh \
-  bash /root/NodeQuality.sh -D "$WORK" > nq.log 2>&1
+  bash /root/NodeQuality.sh ${NQ_OPTS:-} -D "$WORK" > nq.log 2>&1
 echo "NQ exit=$? [$(date -Is)]" >> status.log
 
-# 清理 NQ 可能残留的 bind mount
-for m in $(mount | awk '/bench|BenchOs/{print $3}'); do umount -l "$m" 2>/dev/null; done
+# 只清理本次工作目录下的挂载，不做全局关键词卸载
+for m in "$WORK/BenchOs/proc" "$WORK/BenchOs/sys" "$WORK/BenchOs/dev"; do
+  findmnt -rn -M "$m" >/dev/null 2>&1 && { umount -R "$m" || echo "卸载失败：$m，请手工处理" >> status.log; }
+done
 
 echo "--- NQ 报告链接:" >> status.log
 grep -aoE 'https://nodequality\.com/r/[A-Za-z0-9_-]+' nq.log | tail -1 >> status.log

@@ -1,5 +1,5 @@
 #!/bin/bash
-script_version="v2026-09-16-hermes"
+script_version="v2026-09-16-hermes2"
 check_bash(){
 current_bash_version=$(bash --version|head -n 1|awk -F ' ' '{for (i=1; i<=NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+/) {print $i; exit}}'|cut -d . -f 1)
 if [ "$current_bash_version" = "0" ]||[ "$current_bash_version" = "1" ]||[ "$current_bash_version" = "2" ]||[ "$current_bash_version" = "3" ];then
@@ -558,6 +558,7 @@ return 1
 get_ipv4(){
 local response
 IPV4=""
+[[ ${skip_ipv4_probe:-0} -eq 1 ]]&&return 0
 local API_NET=("ipinfo.io/ip" "myip.check.place" "ip.sb" "ping0.cc" "icanhazip.com" "api64.ipify.org" "ifconfig.co" "ident.me")
 for p in "${API_NET[@]}";do
 response=$(curl $CurlARG -s4 --max-time 2 "$p")
@@ -598,6 +599,7 @@ return 1
 get_ipv6(){
 local response
 IPV6=""
+[[ ${skip_ipv6_probe:-0} -eq 1 ]]&&return 0
 local API_NET=("myip.check.place" "ip.sb" "ping0.cc" "icanhazip.com" "api64.ipify.org" "ifconfig.co" "ident.me")
 for p in "${API_NET[@]}";do
 response=$(curl $CurlARG -s6k --max-time 2 "$p")
@@ -1186,10 +1188,23 @@ show_progress_bar "$temp_info" $((40-5-${sinfo[ldatabase]}))&
 bar_pid="$!"&&disown "$bar_pid"
 trap "kill_progress_bar" RETURN
 ipqs=()
-local RESPONSE=$(curl $CurlARG -sL -$1 -m 10 "https://ipinfo.check.place/$IP?db=ipqualityscore")
-echo "$RESPONSE"|jq . >/dev/null 2>&1||RESPONSE=""
-ipqs[score]=$(echo "$RESPONSE"|jq -r '.fraud_score')
-if [[ ${ipqs[score]} -lt 75 ]];then
+ipqs[score]="null"
+if ! jq --version >/dev/null 2>&1;then
+  echo "IPQS: jq is unavailable" >&2
+  return 1
+fi
+local RESPONSE
+if ! RESPONSE=$(curl $CurlARG -fsL -$1 -m 10 "https://ipinfo.check.place/$IP?db=ipqualityscore");then
+  return 0
+fi
+# Accept exactly one JSON object, not an empty body, error page or JSON stream.
+if ! printf '%s' "$RESPONSE" | jq -e -s 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1;then
+  return 0
+fi
+ipqs[score]=$(printf '%s' "$RESPONSE" | jq -r '(.fraud_score) | if type == "number" and . >= 0 and . <= 100 and . == floor then . else null end') || return 1
+if [[ ${ipqs[score]} == null ]];then
+  : # Missing or malformed scores are unknown, never low risk.
+elif [[ ${ipqs[score]} -lt 75 ]];then
 ipqs[risk]="${sscore[low]}"
 elif [[ ${ipqs[score]} -lt 85 ]];then
 ipqs[risk]="${sscore[suspicious]}"
@@ -2186,6 +2201,15 @@ echo -ne "\r$(printf '%72s'|tr ' ' '=')\n"
 echo -ne "\r$Font_I${stail[stoday]}${stail[today]}${stail[stotal]}${stail[total]}${stail[thanks]} $Font_Suffix\n"
 echo -e ""
 }
+preparse_ip_family(){
+local OPTIND=1 opt
+while getopts ":i:l:o:x:fhjnpyEM46" opt;do
+case $opt in
+4) skip_ipv6_probe=1 ;;
+6) skip_ipv4_probe=1 ;;
+esac
+done
+}
 get_opts(){
 while getopts "i:l:o:x:fhjnpyEM46" opt;do
 case $opt in
@@ -2267,8 +2291,8 @@ eval "bash <(curl -sL https://Check.Place) -EI"
 fi
 exit 0
 fi
-[[ $IPV4check -eq 1 && $IPV6check -eq 0 && $IPV4work -eq 0 ]]&&ERRORcode=40
-[[ $IPV4check -eq 0 && $IPV6check -eq 1 && $IPV6work -eq 0 ]]&&ERRORcode=60
+[[ $ERRORcode -ne 4 && $ERRORcode -ne 6 && $IPV4check -eq 1 && $IPV6check -eq 0 && $IPV4work -eq 0 ]]&&ERRORcode=40
+[[ $ERRORcode -ne 4 && $ERRORcode -ne 6 && $IPV4check -eq 0 && $IPV6check -eq 1 && $IPV6work -eq 0 ]]&&ERRORcode=60
 CurlARG="$useNIC$usePROXY"
 }
 show_help(){
@@ -2452,7 +2476,7 @@ score_updates+=".Score |= . + { IP2LOCATION: \"${ip2location[score]:-null}\" } |
 score_updates+=".Score |= . + { SCAMALYTICS: \"${scamalytics[score]:-null}\" } | "
 score_updates+=".Score |= . + { ipapi: \"${ipapi[score]:-null}\" } | "
 score_updates+=".Score |= . + { AbuseIPDB: \"${abuseipdb[score]:-null}\" } | "
-score_updates+=".Score |= . + { IPQS: \"${ipapi[ipqs]:-null}\" } | "
+score_updates+=".Score |= . + { IPQS: \"${ipqs[score]:-null}\" } | "
 score_updates+=".Score |= . + { DBIP: \"${dbip[score]:-null}\" } | "
 factor_updates+=$(factor_bool "${ip2location[countrycode]}" "IP2LOCATION" "CountryCode")
 factor_updates+=$(factor_bool "${ipapi[countrycode]}" "ipapi" "CountryCode")
@@ -2625,7 +2649,12 @@ show_mail $2
 show_tail)
 fi
 local report_link=""
-[[ mode_json -eq 1 || mode_output -eq 1 || mode_privacy -eq 0 ]]&&save_json
+if [[ mode_json -eq 1 || mode_output -eq 1 || mode_privacy -eq 0 ]];then
+  if ! save_json;then
+    echo "Failed to build JSON report (jq unavailable or invalid input)" >&2
+    return 1
+  fi
+fi
 [[ $mode_lite -eq 0 && mode_privacy -eq 0 ]]&&report_link=$(curl -$2 -s -X POST https://upload.check.place -d "type=ip" --data-urlencode "json=$ipjson" --data-urlencode "content=$ip_report")
 [[ mode_json -eq 0 ]]&&echo -ne "\r$ip_report\n"
 [[ mode_json -eq 0 && mode_privacy -eq 0 && $report_link == *"https://Report.Check.Place/"* ]]&&echo -ne "\r${stail[link]}$report_link$Font_Suffix\n"
@@ -2645,6 +2674,7 @@ generate_random_user_agent
 adapt_locale
 check_connectivity
 read_ref
+preparse_ip_family "$@"
 get_ipv4
 get_ipv6
 is_valid_ipv4 $IPV4
@@ -2658,5 +2688,7 @@ exit $ERRORcode
 fi
 clear
 show_ad
-[[ $IPV4work -ne 0 && $IPV4check -ne 0 ]]&&check_IP "$IPV4" 4
-[[ $IPV6work -ne 0 && $IPV6check -ne 0 ]]&&check_IP "$IPV6" 6
+report_status=0
+[[ $IPV4work -ne 0 && $IPV4check -ne 0 ]]&&{ check_IP "$IPV4" 4 || report_status=1; }
+[[ $IPV6work -ne 0 && $IPV6check -ne 0 ]]&&{ check_IP "$IPV6" 6 || report_status=1; }
+exit "$report_status"
