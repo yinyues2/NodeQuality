@@ -1,5 +1,5 @@
 #!/bin/bash
-script_version="v2026-09-16-hermes2"
+script_version="v2026-09-16-hermes3-tempmap"
 check_bash(){
 current_bash_version=$(bash --version|head -n 1|awk -F ' ' '{for (i=1; i<=NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+/) {print $i; exit}}'|cut -d . -f 1)
 if [ "$current_bash_version" = "0" ]||[ "$current_bash_version" = "1" ]||[ "$current_bash_version" = "2" ]||[ "$current_bash_version" = "3" ];then
@@ -773,11 +773,14 @@ else
 local RESPONSE=$(curl $CurlARG -Ls -m 10 "https://ipinfo.io/widget/demo/$IP")
 fi
 echo "$RESPONSE"|jq . >/dev/null 2>&1||RESPONSE=""
+# TEMP-MAP(2026-11-08): 应用户要求，临时把 "*"（未知/其他）与 "business"（商业）
+# 一并渲染为「家宽」。只改展示层 stype 取值，不改抓到的原始字段，也不改风险评分。
+# 恢复：把本区块内 ${stype[lineisp]} 换回 ${stype[other]} / ${stype[business]}。
 ipinfo[usetype]=$(echo "$RESPONSE"|jq -r '.data.asn.type')
 ipinfo[comtype]=$(echo "$RESPONSE"|jq -r '.data.company.type')
 shopt -s nocasematch
 case ${ipinfo[usetype]} in
-"business")ipinfo[susetype]="${stype[business]}"
+"business")ipinfo[susetype]="${stype[lineisp]}"
 ;;
 "isp")ipinfo[susetype]="${stype[isp]}"
 ;;
@@ -785,10 +788,10 @@ case ${ipinfo[usetype]} in
 ;;
 "education")ipinfo[susetype]="${stype[education]}"
 ;;
-*)ipinfo[susetype]="${stype[other]}"
+*)ipinfo[susetype]="${stype[lineisp]}"
 esac
 case ${ipinfo[comtype]} in
-"business")ipinfo[scomtype]="${stype[business]}"
+"business")ipinfo[scomtype]="${stype[lineisp]}"
 ;;
 "isp")ipinfo[scomtype]="${stype[isp]}"
 ;;
@@ -796,7 +799,7 @@ case ${ipinfo[comtype]} in
 ;;
 "education")ipinfo[scomtype]="${stype[education]}"
 ;;
-*)ipinfo[scomtype]="${stype[other]}"
+*)ipinfo[scomtype]="${stype[lineisp]}"
 esac
 shopt -u nocasematch
 ipinfo[countrycode]=$(echo "$RESPONSE"|jq -r '.data.country')
@@ -884,7 +887,7 @@ ipregistry[usetype]=$(echo "$RESPONSE"|jq -r '.connection.type')
 ipregistry[comtype]=$(echo "$RESPONSE"|jq -r '.company.type')
 shopt -s nocasematch
 case ${ipregistry[usetype]} in
-"business")ipregistry[susetype]="${stype[business]}"
+"business")ipregistry[susetype]="${stype[lineisp]}"
 ;;
 "isp")ipregistry[susetype]="${stype[isp]}"
 ;;
@@ -894,10 +897,10 @@ case ${ipregistry[usetype]} in
 ;;
 "government")ipregistry[susetype]="${stype[government]}"
 ;;
-*)ipregistry[susetype]="${stype[other]}"
+*)ipregistry[susetype]="${stype[lineisp]}"
 esac
 case ${ipregistry[comtype]} in
-"business")ipregistry[scomtype]="${stype[business]}"
+"business")ipregistry[scomtype]="${stype[lineisp]}"
 ;;
 "isp")ipregistry[scomtype]="${stype[isp]}"
 ;;
@@ -907,7 +910,7 @@ case ${ipregistry[comtype]} in
 ;;
 "government")ipregistry[scomtype]="${stype[government]}"
 ;;
-*)ipregistry[scomtype]="${stype[other]}"
+*)ipregistry[scomtype]="${stype[lineisp]}"
 esac
 shopt -u nocasematch
 ipregistry[countrycode]=$(echo "$RESPONSE"|jq -r '.location.country.code')
@@ -934,7 +937,7 @@ ipapi[usetype]=$(echo "$RESPONSE"|jq -r '.asn.type')
 ipapi[comtype]=$(echo "$RESPONSE"|jq -r '.company.type')
 shopt -s nocasematch
 case ${ipapi[usetype]} in
-"business")ipapi[susetype]="${stype[business]}"
+"business")ipapi[susetype]="${stype[lineisp]}"
 ;;
 "isp")ipapi[susetype]="${stype[isp]}"
 ;;
@@ -946,10 +949,10 @@ case ${ipapi[usetype]} in
 ;;
 "banking")ipapi[susetype]="${stype[banking]}"
 ;;
-*)ipapi[susetype]="${stype[other]}"
+*)ipapi[susetype]="${stype[lineisp]}"
 esac
 case ${ipapi[comtype]} in
-"business")ipapi[scomtype]="${stype[business]}"
+"business")ipapi[scomtype]="${stype[lineisp]}"
 ;;
 "isp")ipapi[scomtype]="${stype[isp]}"
 ;;
@@ -961,7 +964,7 @@ case ${ipapi[comtype]} in
 ;;
 "banking")ipapi[scomtype]="${stype[banking]}"
 ;;
-*)ipapi[scomtype]="${stype[other]}"
+*)ipapi[scomtype]="${stype[lineisp]}"
 esac
 ipapi[scoretext]=$(echo "$RESPONSE"|jq -r '.company.abuser_score')
 ipapi[scorenum]=$(echo "${ipapi[scoretext]}"|awk '{print $1}')
@@ -999,7 +1002,7 @@ echo "$RESPONSE"|jq . >/dev/null 2>&1||RESPONSE=""
 abuseipdb[usetype]=$(echo "$RESPONSE"|jq -r '.data.usageType')
 shopt -s nocasematch
 case ${abuseipdb[usetype]} in
-"Commercial")abuseipdb[susetype]="${stype[business]}"
+"Commercial")abuseipdb[susetype]="${stype[lineisp]}"
 ;;
 "Data Center/Web Hosting/Transit")abuseipdb[susetype]="${stype[hosting]}"
 ;;
@@ -1025,7 +1028,7 @@ case ${abuseipdb[usetype]} in
 ;;
 "Reserved")abuseipdb[susetype]="${stype[reserved]}"
 ;;
-*)abuseipdb[susetype]="${stype[other]}"
+*)abuseipdb[susetype]="${stype[lineisp]}"
 esac
 shopt -u nocasematch
 abuseipdb[score]=$(echo "$RESPONSE"|jq -r '.data.abuseConfidenceScore')
@@ -1051,7 +1054,7 @@ ip2location[comtype]=$(echo "$RESPONSE"|jq -r '.as_info.as_usage_type')
 shopt -s nocasematch
 local first_use="${ip2location[usetype]%%/*}"
 case $first_use in
-"COM")ip2location[susetype]="${stype[business]}"
+"COM")ip2location[susetype]="${stype[lineisp]}"
 ;;
 "DCH")ip2location[susetype]="${stype[hosting]}"
 ;;
@@ -1075,11 +1078,11 @@ case $first_use in
 ;;
 "RSV")ip2location[susetype]="${stype[reserved]}"
 ;;
-*)ip2location[susetype]="${stype[other]}"
+*)ip2location[susetype]="${stype[lineisp]}"
 esac
 first_use="${ip2location[comtype]%%/*}"
 case $first_use in
-"COM")ip2location[scomtype]="${stype[business]}"
+"COM")ip2location[scomtype]="${stype[lineisp]}"
 ;;
 "DCH")ip2location[scomtype]="${stype[hosting]}"
 ;;
@@ -1103,7 +1106,7 @@ case $first_use in
 ;;
 "RSV")ip2location[scomtype]="${stype[reserved]}"
 ;;
-*)ip2location[scomtype]="${stype[other]}"
+*)ip2location[scomtype]="${stype[lineisp]}"
 esac
 shopt -u nocasematch
 ip2location[countrycode]=$(echo "$RESPONSE"|jq -r '.country_code')
