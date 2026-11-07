@@ -51,6 +51,8 @@ printf 'v\ny\ny\ny\n' | env TERM=xterm HERMES_IPQ=/root/ipq-hermes.sh bash NodeQ
 | 报告生成失败仍返回 0 | `save_json` 失败被忽略 | 显式 `return 1`，主流程打印失败并返回非 0 |
 | 运行器不 fail-closed | `run_nq_full.sh` 校验失败仅警告后继续；收尾按 `bench\|BenchOs` 关键词全局卸载挂载 | 校验失败直接退出；只 `findmnt` 精确匹配 `$WORK/BenchOs/{proc,sys,dev}` 再 `umount -R`；新增 `NQ_OPTS` 透传（如 `NQ_OPTS=-4`） |
 
+**诊断**：IPQS 取不到分时，脚本会在 stderr 打印 `IPQS: 请求失败 curl_rc=… http=…` / `IPQS: HTTP 403…` / `IPQS: 响应不是单个 JSON 对象`，报告里同时显示「无」。缺项不再和真实 0 分混在一起，日志里能直接看出是超时、非 200 还是响应格式不对。
+
 **已知边界**：IPQS 数据仍经 `ipinfo.check.place/...?db=ipqualityscore` 代理获取，不是 IPQualityScore 官方 API；没有官方 key 时该分值只能当参考，不能当权威判定。本分支不绕过任何站点的反爬或风控。
 
 ---

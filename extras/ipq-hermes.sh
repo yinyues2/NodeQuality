@@ -1193,12 +1193,22 @@ if ! jq --version >/dev/null 2>&1;then
   echo "IPQS: jq is unavailable" >&2
   return 1
 fi
-local RESPONSE
-if ! RESPONSE=$(curl $CurlARG -fsL -$1 -m 10 "https://ipinfo.check.place/$IP?db=ipqualityscore");then
+local RESPONSE BODY CODE curl_rc
+BODY=$(mktemp) || { echo "IPQS: 无法创建临时文件" >&2; return 0; }
+CODE=$(curl $CurlARG -sL -$1 -m 10 -o "$BODY" -w '%{http_code}' "https://ipinfo.check.place/$IP?db=ipqualityscore"); curl_rc=$?
+RESPONSE=$(cat "$BODY"); rm -f "$BODY"
+if [[ $curl_rc -ne 0 ]];then
+  # 失败必须留痕：静默把失败写成「无」会让缺项和真实 0 分无法区分。
+  echo "IPQS: 请求失败 curl_rc=$curl_rc http=${CODE:-none}" >&2
+  return 0
+fi
+if [[ "$CODE" != 200 ]];then
+  echo "IPQS: HTTP $CODE（非 200，按缺失处理）" >&2
   return 0
 fi
 # Accept exactly one JSON object, not an empty body, error page or JSON stream.
 if ! printf '%s' "$RESPONSE" | jq -e -s 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1;then
+  echo "IPQS: 响应不是单个 JSON 对象（长度 ${#RESPONSE}）" >&2
   return 0
 fi
 ipqs[score]=$(printf '%s' "$RESPONSE" | jq -r '(.fraud_score) | if type == "number" and . >= 0 and . <= 100 and . == floor then . else null end') || return 1
